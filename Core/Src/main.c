@@ -31,7 +31,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define ENCODER_COUNT 56
+#define TIMER5_PERIOD 0.01 //10ms
+#define DELTA_K 1 / ((TIMER5_PERIOD)* ENCODER_COUNT * (244904/12000))
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -65,7 +67,31 @@ static void MX_TIM6_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+//TODO attention pour le wrapping a 0
+float static inline rpsSpeed(uint16_t count){
+	float speed = count * DELTA_K;
+	return speed;
+}
 
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+	if(htim->Instance == TIM5){
+		static int32_t previousCount=0; //static pour que ca garde l'ancienne valuere
+		uint16_t currentCount = __HAL_TIM_GET_COUNTER(&TIM5);
+		static int32_t diff = currentCount-previousCount; //static pour visualiser
+
+		//overflow positif
+		if(diff > 32767){
+			diff -= 65536;
+		}
+
+		//overflow negatif
+		else if(diff < -32768){
+			diff += 65536;
+		}
+
+		previousCount = currentCount;
+	}
+}
 /* USER CODE END 0 */
 
 /**
