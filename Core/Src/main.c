@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include <stdlib.h> // Required for atoi
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -33,7 +34,9 @@
 /* USER CODE BEGIN PD */
 #define ENCODER_COUNT 56
 #define TIMER5_PERIOD 0.01 //10ms
-#define DELTA_K 1 / ((TIMER5_PERIOD)* ENCODER_COUNT * (244904/12000))
+#define DELTA_K (1.0f / ((TIMER5_PERIOD)* ENCODER_COUNT * (244904.0f/12000.0f)))
+static int uart_ready=0;
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -67,17 +70,26 @@ static void MX_TIM6_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+ if (huart->Instance == USART2) {
+	 uart_ready = 1; // Flag
+ }
+
+}
+
+
 //TODO attention pour le wrapping a 0
 float static inline rpsSpeed(uint16_t count){
-	float speed = count * DELTA_K;
+	float speed = (float) count * DELTA_K;
 	return speed;
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	if(htim->Instance == TIM5){
 		static int32_t previousCount=0; //static pour que ca garde l'ancienne valuere
-		uint16_t currentCount = __HAL_TIM_GET_COUNTER(&TIM5);
-		static int32_t diff = currentCount-previousCount; //static pour visualiser
+		uint16_t currentCount = __HAL_TIM_GET_COUNTER(&htim1);
+		int32_t diff = currentCount-previousCount;
 
 		//overflow positif
 		if(diff > 32767){
@@ -100,6 +112,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
   */
 int main(void)
 {
+	static int returnVal=0;
 
   /* USER CODE BEGIN 1 */
 
@@ -108,14 +121,14 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+	HAL_Init();
 
   /* USER CODE BEGIN Init */
 
   /* USER CODE END Init */
 
   /* Configure the system clock */
-  SystemClock_Config();
+	 SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
 
@@ -129,7 +142,18 @@ int main(void)
   MX_TIM5_Init();
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
+  //TODO
 
+  returnVal = HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+  returnVal =  HAL_TIM_Base_Start_IT(&htim5);
+  returnVal = HAL_TIM_Base_Start(&htim6);
+  returnVal = HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
+//   HAL_UART_Receive_IT(&huart2, uart_b);
+
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_SET); // Set PC6 high
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET); // Set PC8 low
+  uint8_t pwm[4]={0};
+  returnVal =HAL_UART_Receive_IT(&huart2, pwm, 4);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -137,6 +161,14 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
+	  if(uart_ready ==1){
+		    int num = atoi((char *)pwm);
+		  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, num);
+		  uart_ready = 0;
+		  HAL_UART_Receive_IT(&huart2, pwm, 4);
+	  }
+
+
 
     /* USER CODE BEGIN 3 */
   }
