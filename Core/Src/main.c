@@ -21,6 +21,7 @@
 #include <stdlib.h> // Required for atoi
 #include <stdio.h>   // for sprintf()
 #include <string.h>  // for strlen()
+#include "pid.h"
 
 //#ifdef DEBUG
 	volatile int32_t diff_global = 0;
@@ -36,20 +37,6 @@ volatile uint8_t uart_ready = 0;
 volatile uint16_t uartIndex = 0;
 volatile float control=0;
 
-typedef struct {
-	//Gain
-	float Kp;
-	float Ki;
-	float Kd;
-
-	//state
-	float currentError;
-	float pastError;
-	float pastError2;
-	float integral;
-
-} PidController;
-
 PidController motorPID = {
     .Kp = 15000.0f,
     .Ki = 100000.0f,
@@ -59,6 +46,8 @@ PidController motorPID = {
     .pastError2 = 0,
     .integral = 0,
 };
+
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -72,9 +61,7 @@ PidController motorPID = {
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define ENCODER_COUNT 56
-#define TIMER5_PERIOD 0.001 //10ms
-#define FRACTION_TIMER5 (1.0 / TIMER5_PERIOD) //100
-#define DELTA_K (1.0f / ((TIMER5_PERIOD)* ENCODER_COUNT * (244904.0f/12000.0f)))
+
 
 //static int uart_ready=0;
 
@@ -141,21 +128,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 }
 
 
-float static inline PID(PidController *pid, float ref, float real){
-	float derivative = 0;
-	float controlVal = 0;
-	pid->pastError2 = pid->pastError;
-	pid->pastError = pid->currentError;
-	pid->currentError = ref-real;
 
-	pid->integral += TIMER5_PERIOD*(pid->currentError); ///accumule l'erreur
-	if (pid->integral > 400) pid->integral = 400;
-	if (pid->integral < -400) pid->integral = -400;
-	derivative = (FRACTION_TIMER5) * ((pid->currentError) - 2*(pid->pastError) + (pid->pastError2));
-	controlVal =  (pid->Kp * pid->currentError) + (pid->Ki * pid->integral) +(pid->Kd * derivative);
-
-	return controlVal;
-}
 
 //TODO attention pour le wrapping a 0
 float static inline rpsSpeed(uint16_t count){
@@ -297,8 +270,6 @@ int main(void)
 			  num = atof((char*)uartBuf + 4);
 
 	  }
-
-
 
     /* USER CODE BEGIN 3 */
   }
