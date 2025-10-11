@@ -19,7 +19,46 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include <stdlib.h> // Required for atoi
+#include <stdio.h>   // for sprintf()
+#include <string.h>  // for strlen()
 
+//#ifdef DEBUG
+	volatile int32_t diff_global = 0;
+	volatile float rpsSpeedVal = 0;
+//#endif
+
+float num =0;
+#define UART_BUFFER_SIZE 64
+
+uint8_t rxByte;                       // single-byte buffer
+uint8_t uartBuf[UART_BUFFER_SIZE];    // store received command
+volatile uint8_t uart_ready = 0;
+volatile uint16_t uartIndex = 0;
+volatile float control=0;
+
+typedef struct {
+	//Gain
+	float Kp;
+	float Ki;
+	float Kd;
+
+	//state
+	float currentError;
+	float pastError;
+	float pastError2;
+	float integral;
+
+} PidController;
+
+PidController motorPID = {
+    .Kp = 15000.0f,
+    .Ki = 100000.0f,
+    .Kd = 1.0f,
+    .currentError = 0,
+    .pastError = 0,
+    .pastError2 = 0,
+    .integral = 0,
+};
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -33,9 +72,11 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define ENCODER_COUNT 56
-#define TIMER5_PERIOD 0.01 //10ms
+#define TIMER5_PERIOD 0.001 //10ms
+#define FRACTION_TIMER5 (1.0 / TIMER5_PERIOD) //100
 #define DELTA_K (1.0f / ((TIMER5_PERIOD)* ENCODER_COUNT * (244904.0f/12000.0f)))
-static int uart_ready=0;
+
+//static int uart_ready=0;
 
 /* USER CODE END PD */
 
@@ -71,19 +112,61 @@ static void MX_TIM6_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
- if (huart->Instance == USART2) {
-	 uart_ready = 1; // Flag
- }
+//void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+// if (huart->Instance == USART2) {
+//	 uart_ready = 1; // Flag
+// }
+//
+//}
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+   if (huart->Instance == USART2)
+    {
+        // End of line received
+    	if (rxByte == '\r') {
+    	            // ignore, wait for '\n'
+		}
+		else if (rxByte == '\n') {
+			uartBuf[uartIndex] = '\0';
+			uart_ready = 1;
+			uartIndex = 0;
+		}
+        else if (uartIndex < UART_BUFFER_SIZE - 1)
+        {
+            uartBuf[uartIndex++] = rxByte; // store byte
+        }
 
+		HAL_UART_Receive_IT(&huart2, &rxByte, 1);
+    }
 }
 
+
+float static inline PID(PidController *pid, float ref, float real){
+	float derivative = 0;
+	float controlVal = 0;
+	pid->pastError2 = pid->pastError;
+	pid->pastError = pid->currentError;
+	pid->currentError = ref-real;
+
+	pid->integral += TIMER5_PERIOD*(pid->currentError); ///accumule l'erreur
+	if (pid->integral > 400) pid->integral = 400;
+	if (pid->integral < -400) pid->integral = -400;
+	derivative = (FRACTION_TIMER5) * ((pid->currentError) - 2*(pid->pastError) + (pid->pastError2));
+	controlVal =  (pid->Kp * pid->currentError) + (pid->Ki * pid->integral) +(pid->Kd * derivative);
+
+	return controlVal;
+}
 
 //TODO attention pour le wrapping a 0
 float static inline rpsSpeed(uint16_t count){
 	float speed = (float) count * DELTA_K;
+
+#ifdef DEBUG
+	rpsSpeedVal = speed;
+#endif
 	return speed;
 }
+
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	if(htim->Instance == TIM5){
@@ -102,7 +185,25 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		}
 
 		previousCount = currentCount;
+#ifdef DEBUG
+		diff_global = diff;
+#endif
+
+//		float realSpeed = rpsSpeed(diff);
+		// --- Smoothed speed computation ---
+		static float filteredSpeed = 0;
+		float instantSpeed = (float)diff * DELTA_K;
+		filteredSpeed = 0.9f * filteredSpeed + 0.1f * instantSpeed;
+		float realSpeed = filteredSpeed;
+		rpsSpeedVal = realSpeed;
+		// ----------------------------------
+		control = PID(&motorPID, num , realSpeed);
+		if(control<0) control=0;
+		else if(control>3999)control =3999;
+		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (uint32_t)control);
+
 	}
+
 }
 /* USER CODE END 0 */
 
@@ -112,7 +213,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
   */
 int main(void)
 {
-	static int returnVal=0;
 
   /* USER CODE BEGIN 1 */
 
@@ -142,18 +242,15 @@ int main(void)
   MX_TIM5_Init();
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
-  //TODO
 
-  returnVal = HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-  returnVal =  HAL_TIM_Base_Start_IT(&htim5);
-  returnVal = HAL_TIM_Base_Start(&htim6);
-  returnVal = HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
-//   HAL_UART_Receive_IT(&huart2, uart_b);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+  HAL_TIM_Base_Start_IT(&htim5);
+  HAL_TIM_Base_Start(&htim6);
+  HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_SET); // Set PC6 high
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET); // Set PC8 low
-  uint8_t pwm[4]={0};
-  returnVal =HAL_UART_Receive_IT(&huart2, pwm, 4);
+  HAL_UART_Receive_IT(&huart2, &rxByte, 1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -161,11 +258,44 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-	  if(uart_ready ==1){
-		    int num = atoi((char *)pwm);
-		  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, num);
-		  uart_ready = 0;
-		  HAL_UART_Receive_IT(&huart2, pwm, 4);
+//	  if(uart_ready ==1){
+//		   num = atof((char *)uartBuf);  // convert ASCII to float;
+//		  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, num);
+//		  uart_ready = 0;
+//		  HAL_UART_Receive_IT(&huart2, uartBuf, 20);
+//	  }
+
+	  if (uart_ready==1)
+	  {
+	      uart_ready = 0;
+
+//	      if (strncmp((char*)uartBuf, "Kp=", 3) == 0)
+//	          motorPID.Kp = atof((char*)uartBuf + 3);
+//	      else if (strncmp((char*)uartBuf, "Ki=", 3) == 0)
+//	          motorPID.Ki = atof((char*)uartBuf + 3);
+//	      else if (strncmp((char*)uartBuf, "Kd=", 3) == 0)
+//	          motorPID.Kd = atof((char*)uartBuf + 3);
+//	      else if (strncmp((char*)uartBuf, "REF=", 4) == 0)
+//	          num = atof((char*)uartBuf + 4);
+
+	      if (strncmp((char*)uartBuf, "Kp=", 3) == 0) {
+	          motorPID.Kp = atof((char*)uartBuf + 3);
+	          motorPID.integral = 0;
+	          motorPID.pastError = 0;
+	          motorPID.pastError2 = 0;
+	      }
+	      else if (strncmp((char*)uartBuf, "Ki=", 3) == 0) {
+	          motorPID.Ki = atof((char*)uartBuf + 3);
+	          motorPID.integral = 0;
+	      }
+	      else if (strncmp((char*)uartBuf, "Kd=", 3) == 0) {
+	          motorPID.Kd = atof((char*)uartBuf + 3);
+	          motorPID.pastError = 0;
+	          motorPID.pastError2 = 0;
+	      }
+	      else if (strncmp((char*)uartBuf, "REF=", 4) == 0)
+			  num = atof((char*)uartBuf + 4);
+
 	  }
 
 
@@ -355,7 +485,7 @@ static void MX_TIM5_Init(void)
   htim5.Instance = TIM5;
   htim5.Init.Prescaler = 7999;
   htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim5.Init.Period = 99;
+  htim5.Init.Period = 9;
   htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim5) != HAL_OK)
