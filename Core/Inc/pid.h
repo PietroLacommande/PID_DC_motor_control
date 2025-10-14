@@ -9,8 +9,9 @@
 #ifndef INC_PID_H_
 #define INC_PID_H_
 
-#define TIMER5_PERIOD 0.001 //1ms
-#define FRACTION_TIMER5 (1.0 / TIMER5_PERIOD) //100
+#define ENCODER_COUNT 56
+#define TIMER5_PERIOD 0.02f //20ms
+#define FRACTION_TIMER5 (1.0 / TIMER5_PERIOD)
 #define DELTA_K (1.0f / ((TIMER5_PERIOD)* ENCODER_COUNT * (244904.0f/12000.0f)))
 
 typedef struct {
@@ -37,9 +38,8 @@ float static inline PID(PidController *pid, float ref, float real){
 	pid->currentError = ref-real;
 
 	pid->integral += TIMER5_PERIOD*(pid->currentError); ///accumule l'erreur
-	if (pid->integral > 400) pid->integral = 400;
-	if (pid->integral < -400) pid->integral = -400;
-	derivative = (FRACTION_TIMER5) * ((pid->currentError) - 2*(pid->pastError) + (pid->pastError2));
+
+	derivative = (FRACTION_TIMER5) * ((pid->currentError) - 2.0*(pid->pastError) + (pid->pastError2));
 	controlVal =  (pid->Kp * pid->currentError) + (pid->Ki * pid->integral) +(pid->Kd * derivative);
 
 	return controlVal;

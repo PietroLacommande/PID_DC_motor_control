@@ -29,9 +29,9 @@
 	volatile float rpsSpeedVal = 0;
 #endif
 
-float num =0;
+
+float desiredSpeed =0;
 #define UART_BUFFER_SIZE 64
-#define ENCODER_COUNT 56
 
 uint8_t rxByte;                       // single-byte buffer
 uint8_t uartBuf[UART_BUFFER_SIZE];    // store received command
@@ -40,9 +40,9 @@ volatile uint16_t uartIndex = 0;
 volatile float control=0;
 
 PidController motorPID = {
-    .Kp = 15000.0f,
-    .Ki = 100000.0f,
-    .Kd = 1.0f,
+    .Kp = 8500.0f,
+    .Ki = 5.0f,
+    .Kd = 0.5f,
     .currentError = 0,
     .pastError = 0,
     .pastError2 = 0,
@@ -111,9 +111,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		float instantSpeed = (float)diff * DELTA_K;
 		filteredSpeed = 0.9f * filteredSpeed + 0.1f * instantSpeed;
 		float realSpeed = filteredSpeed;
+
+
 		rpsSpeedVal = realSpeed;
-		// ----------------------------------
-		control = PID(&motorPID, num , realSpeed);
+		control = PID(&motorPID,desiredSpeed, realSpeed);
+
+		if (desiredSpeed > 0.05) {
+		  control += 2500; //en dessous il n'y a pas de pwm
+		} else {
+		  control = 0; // Turn off motor if desiredSpeed is 0
+		}
+
+
 		if(control<0) control=0;
 		else if(control>3999)control =3999;
 		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (uint32_t)control);
@@ -158,7 +167,7 @@ int main(void)
 	          motorPID.pastError2 = 0;
 	      }
 	      else if (strncmp((char*)uartBuf, "REF=", 4) == 0)
-			  num = atof((char*)uartBuf + 4);
+			  desiredSpeed = atof((char*)uartBuf + 4);
 
 	  }
 
