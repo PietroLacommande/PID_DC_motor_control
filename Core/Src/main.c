@@ -30,18 +30,20 @@
 #endif
 
 
-float desiredSpeed =0;
-#define UART_BUFFER_SIZE 64
 
-uint8_t rxByte;                       // single-byte buffer
-uint8_t uartBuf[UART_BUFFER_SIZE];    // store received command
+#define UART_BUFFER_SIZE 64
+uint8_t rxByte;
+uint8_t uartBuf[UART_BUFFER_SIZE];
 volatile uint8_t uart_ready = 0;
 volatile uint16_t uartIndex = 0;
-volatile float control=0;
+
+
+volatile float desiredSpeed =0; //value can be modified in many places
+volatile float control=0; //value can be modified in many places
 
 PidController motorPID = {
-    .Kp = 8500.0f,
-    .Ki = 5.0f,
+    .Kp = 500.0f,
+    .Ki = 1000.0f,
     .Kd = 0.5f,
     .currentError = 0,
     .pastError = 0,
@@ -75,16 +77,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 
 
-float static inline rpsSpeed(uint16_t count){
-	float speed = (float) count * DELTA_K;
-
-#ifdef DEBUG
-	rpsSpeedVal = speed;
-#endif
-	return speed;
-}
-
-
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	if(htim->Instance == TIM5){
 		static int32_t previousCount=0; //static pour que ca garde l'ancienne valuere
@@ -102,19 +94,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		}
 
 		previousCount = currentCount;
+
 #ifdef DEBUG
 		diff_global = diff;
 #endif
 
-		// --- Smoothed speed computation ---
-		static float filteredSpeed = 0;
+
 		float instantSpeed = (float)diff * DELTA_K;
-		filteredSpeed = 0.9f * filteredSpeed + 0.1f * instantSpeed;
-		float realSpeed = filteredSpeed;
+		rpsSpeedVal = instantSpeed;
 
-
-		rpsSpeedVal = realSpeed;
-		control = PID(&motorPID,desiredSpeed, realSpeed);
+		control = PID(&motorPID,desiredSpeed, instantSpeed);
 
 		if (desiredSpeed > 0.05) {
 		  control += 2500; //en dessous il n'y a pas de pwm
@@ -123,8 +112,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		}
 
 
-		if(control<0) control=0;
-		else if(control>3999)control =3999;
+		if(control<0){
+			control=0;
+		}
+		else if(control>3999){
+			control =3999;
+		}
 		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (uint32_t)control);
 
 	}

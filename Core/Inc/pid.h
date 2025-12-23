@@ -30,7 +30,7 @@ typedef struct {
 
 
 
-float static inline PID(PidController *pid, float ref, float real){
+float static inline PID(PidController pid, float ref, float real){
 	float derivative = 0;
 	float controlVal = 0;
 	pid->pastError2 = pid->pastError;
