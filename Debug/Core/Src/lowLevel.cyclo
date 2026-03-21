@@ -1,9 +1,0 @@
-../Core/Src/lowLevel.c:21:6:initAllLowLevel	1
-../Core/Src/lowLevel.c:53:6:SystemClock_Config	4
-../Core/Src/lowLevel.c:103:6:MX_TIM1_Init	3
-../Core/Src/lowLevel.c:154:6:MX_TIM2_Init	6
-../Core/Src/lowLevel.c:213:6:MX_TIM5_Init	4
-../Core/Src/lowLevel.c:258:6:MX_TIM6_Init	3
-../Core/Src/lowLevel.c:296:6:MX_USART2_UART_Init	2
-../Core/Src/lowLevel.c:331:6:MX_GPIO_Init	1
-../Core/Src/lowLevel.c:383:6:Error_Handler	1
